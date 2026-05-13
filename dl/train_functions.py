@@ -2,10 +2,9 @@ import os
 import gc
 import torch
 import torch.nn as nn
-from torch.cuda import amp
 
 from dl.data import get_loaders
-from dl.objects.model import AmesTabTransformer
+from dl.objects.model import AmesDNN
 from dl.objects.scheduler import get_scheduler
 
 
@@ -13,12 +12,13 @@ def train(config, model, loader, optimizer, scheduler, criterion, scaler):
     model.train()
     total_loss = 0.0
     optimizer.zero_grad()
+    use_amp = config.training.mixed_precision and config.training.device == 'cuda'
 
     for step, batch in enumerate(loader):
         batch = {k: v.to(config.training.device) for k, v in batch.items()}
 
-        if config.training.mixed_precision:
-            with amp.autocast():
+        if use_amp:
+            with torch.amp.autocast('cuda'):
                 loss = criterion(model(batch), batch['label'])
                 if config.training.gradient_accumulation:
                     loss = loss / config.training.gradient_accumulation_steps
@@ -36,11 +36,11 @@ def train(config, model, loader, optimizer, scheduler, criterion, scaler):
 
         if not config.training.gradient_accumulation or accum_ready or last_step:
             if config.training.gradient_clipping:
-                if config.training.mixed_precision:
+                if use_amp:
                     scaler.unscale_(optimizer)
                 nn.utils.clip_grad_norm_(model.parameters(), config.training.clip_value)
 
-            if config.training.mixed_precision:
+            if use_amp:
                 scaler.step(optimizer)
                 scaler.update()
             else:
@@ -77,13 +77,15 @@ def run(config):
 
     train_loader, val_loader, meta = get_loaders(config, config.paths.train_csv)
 
-    model     = AmesTabTransformer(meta['num_features'], meta['cat_sizes'], config).to(config.training.device)
+    model     = AmesDNN(meta['num_features'], meta['cat_sizes'], config).to(config.training.device)
     criterion = nn.MSELoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.training.lr, weight_decay=config.training.weight_decay)
     scheduler = get_scheduler(config, optimizer)
-    scaler    = amp.GradScaler(enabled=(config.training.mixed_precision and config.training.device == 'cuda'))
+    use_amp   = config.training.mixed_precision and config.training.device == 'cuda'
+    scaler    = torch.amp.GradScaler('cuda', enabled=use_amp)
 
     best_val_loss, no_improve, best_weights = float('inf'), 0, None
+    best_preds, best_labels = None, None
     train_losses, val_losses = [], []
 
     for epoch in range(config.training.epochs):
@@ -95,6 +97,8 @@ def run(config):
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
+            best_preds    = preds
+            best_labels   = labels
             no_improve    = 0
             best_weights  = {k: v.clone() for k, v in model.state_dict().items()}
             if config.training.save_best:
@@ -117,4 +121,4 @@ def run(config):
 
     model.load_state_dict(best_weights)
     print(f'Best val MSE : {best_val_loss:.5f}')
-    return model, meta, train_losses, val_losses
+    return model, meta, train_losses, val_losses, best_preds, best_labels

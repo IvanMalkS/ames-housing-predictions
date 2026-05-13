@@ -32,11 +32,10 @@ config = {
         'drop_last': True,
     },
     'model': {
-        'hidden_dim': 128,
-        'num_heads': 4,
-        'num_layers': 3,
-        'mlp_ratio': 2.0,
-        'dropout': 0.10,
+        'hidden_dim': 256,
+        'emb_dim': 16,
+        'num_layers': 4,
+        'dropout': 0.15,
     },
 }
 
