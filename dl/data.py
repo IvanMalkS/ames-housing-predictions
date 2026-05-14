@@ -101,7 +101,6 @@ def prepare_data(config, train_csv_path: str):
 def get_fold_loaders(config, X: pd.DataFrame, y: np.ndarray,
                      train_idx: np.ndarray, val_idx: np.ndarray,
                      num_cols: list, cat_cols: list):
-    """Фитит preprocessing на train-фолде, возвращает loaders и meta."""
     X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
     y_train, y_val = y[train_idx], y[val_idx]
 

@@ -177,11 +177,13 @@ def run(config):
                 )
 
     oof_mape = mean_absolute_percentage_error(np.expm1(oof_labels), np.expm1(oof_preds))
+    oof_rmse = np.sqrt(np.mean((oof_preds - oof_labels) ** 2))
 
     print(f'\n{"="*45}')
     print(f'Per-fold MAPE : {[f"{m*100:.2f}%" for m in fold_mapes]}')
     print(f'Mean MAPE     : {np.mean(fold_mapes)*100:.2f}% ± {np.std(fold_mapes)*100:.2f}%')
     print(f'OOF  MAPE     : {oof_mape*100:.2f}%')
+    print(f'OOF  RMSE     : {oof_rmse:.5f} (log-space)')
     print(f'{"="*45}')
 
     best_fold_idx = int(np.argmin(fold_val_losses))

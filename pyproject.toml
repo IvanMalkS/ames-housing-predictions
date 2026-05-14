@@ -1,7 +1,7 @@
 [project]
 name = "ames-housing-dl"
 version = "0.1.0"
-description = "Tab-Transformer DL pipeline for Ames Housing price prediction"
+description = "DNN pipeline for Ames Housing price prediction"
 requires-python = ">=3.10"
 dependencies = [
     "torch>=2.1.0",
