@@ -5,7 +5,6 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
 from sklearn.datasets import fetch_openml
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, OrdinalEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
@@ -63,7 +62,6 @@ def download_data(csv_path: str) -> None:
     import ssl
 
     print(f'Downloading Ames Housing dataset to {csv_path} ...')
-    # macOS Python from python.org ships without system certs; patch before any network call
     _orig = ssl._create_default_https_context
     ssl._create_default_https_context = ssl._create_unverified_context
     try:
@@ -79,34 +77,41 @@ def download_data(csv_path: str) -> None:
     print(f'Saved {len(df)} rows to {csv_path}')
 
 
-def get_loaders(config, train_csv_path: str):
+def prepare_data(config, train_csv_path: str):
+    np.random.seed(config.general.seed)
+
     if not os.path.exists(train_csv_path):
         download_data(train_csv_path)
+
     df = pd.read_csv(train_csv_path)
     df = df.drop('Id', axis=1, errors='ignore')
     df = df.drop(df[df['GrLivArea'] > 4000].index)
     df['SalePrice'] = np.log1p(df['SalePrice'])
     df = add_features(df)
 
-    X = df.drop('SalePrice', axis=1)
+    X = df.drop('SalePrice', axis=1).reset_index(drop=True)
     y = df['SalePrice'].values
 
     num_cols = X.select_dtypes(include=['int64', 'float64']).columns.tolist()
     cat_cols = X.select_dtypes(include=['object']).columns.tolist()
 
-    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+    return X, y, num_cols, cat_cols
+
+
+def get_fold_loaders(config, X: pd.DataFrame, y: np.ndarray,
+                     train_idx: np.ndarray, val_idx: np.ndarray,
+                     num_cols: list, cat_cols: list):
+    """Фитит preprocessing на train-фолде, возвращает loaders и meta."""
+    X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
+    y_train, y_val = y[train_idx], y[val_idx]
 
     num_pipe, cat_pipe = _build_pipes(X_train, num_cols, cat_cols)
-
     X_num_train, X_cat_train = _transform(X_train, num_pipe, cat_pipe, num_cols, cat_cols)
     X_num_val,   X_cat_val   = _transform(X_val,   num_pipe, cat_pipe, num_cols, cat_cols)
 
     cat_sizes = [int(X_cat_train[:, i].max()) + 1 for i in range(X_cat_train.shape[1])]
 
-    dl_params = dict(
-        batch_size=config.dataloader.batch_size,
-        num_workers=config.dataloader.num_workers,
-    )
+    dl_params = dict(batch_size=config.dataloader.batch_size, num_workers=config.dataloader.num_workers)
     train_loader = DataLoader(
         AmesDataset(X_num_train, X_cat_train, y_train),
         shuffle=config.dataloader.shuffle,
@@ -127,5 +132,4 @@ def get_loaders(config, train_csv_path: str):
         'num_pipe':     num_pipe,
         'cat_pipe':     cat_pipe,
     }
-
     return train_loader, val_loader, meta
